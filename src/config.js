@@ -5,6 +5,12 @@
 import 'dotenv/config';
 
 export const config = {
+    // Account credentials (for auto-login when cookies expire)
+    credentials: {
+        email: process.env.POKEMON_CENTER_EMAIL || '',
+        password: process.env.POKEMON_CENTER_PASSWORD || '',
+    },
+
     // Monitoring
     pollIntervalMs: (Number(process.env.POLL_INTERVAL_SECONDS) || 60) * 1000,
     pollJitterMs: (Number(process.env.POLL_JITTER_SECONDS) || 15) * 1000,
