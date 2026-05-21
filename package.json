@@ -1,0 +1,26 @@
+{
+    "name": "matt-pokemon-bot",
+    "version": "1.0.0",
+    "description": "Pokemon Center auto-purchase bot — monitors restocks and buys with store credits",
+    "main": "src/index.js",
+    "type": "module",
+    "scripts": {
+        "start": "node src/index.js",
+        "start:dry": "DRY_RUN=true node src/index.js",
+        "monitor:test": "node scripts/test-monitor.js",
+        "product:add": "node scripts/add-product.js",
+        "cookies:export": "node scripts/export-cookies.js",
+        "test": "node --test \"tests/**/*.test.js\""
+    },
+    "keywords": ["pokemon", "pokemoncenter", "restock", "bot", "automation"],
+    "author": "Matt",
+    "license": "MIT",
+    "dependencies": {
+        "better-sqlite3": "^11.10.0",
+        "dotenv": "^17.2.3",
+        "playwright": "^1.52.0",
+        "playwright-extra": "^4.3.6",
+        "puppeteer-extra-plugin-stealth": "^2.11.2"
+    },
+    "devDependencies": {}
+}

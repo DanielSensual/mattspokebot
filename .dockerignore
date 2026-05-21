@@ -1,0 +1,17 @@
+node_modules/
+.git/
+.env
+.env.*
+!.env.example
+*.db
+*.db-wal
+*.db-shm
+screenshots/
+logs/
+browser-data/
+tmp/
+tests/
+*.log
+.DS_Store
+.gitignore
+README.md

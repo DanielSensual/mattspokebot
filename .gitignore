@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.local
+.env.bak*
+
+# Databases
+*.db
+*.db-wal
+*.db-shm
+
+# Screenshots
+screenshots/
+
+# Logs
+logs/
+*.log
+
+# Browser data
+browser-data/
+
+# OS
+.DS_Store
+
+# Temp
+tmp/
