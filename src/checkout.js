@@ -95,6 +95,101 @@ async function clickFirst(page, selectors, options = {}) {
     return false;
 }
 
+/**
+ * Handle PayPal login flow inside a popup or redirect page.
+ * Fills email → Next → password → Login → Confirm payment.
+ *
+ * @param {import('playwright').Page} paypalPage  The PayPal page (popup or redirect)
+ */
+async function handlePayPalLogin(paypalPage) {
+    const { email, password } = config.paypal;
+
+    if (!email || !password) {
+        log.error('PayPal credentials not configured');
+        return;
+    }
+
+    try {
+        await paypalPage.waitForLoadState('domcontentloaded', { timeout: 15000 });
+        await humanDelay();
+
+        // Step 1: Enter PayPal email
+        const emailInput = paypalPage.locator('#email, input[name="login_email"], input[type="email"]').first();
+        await emailInput.waitFor({ state: 'visible', timeout: 10000 });
+        await emailInput.click();
+        await humanDelay();
+        await emailInput.fill(email);
+        log.info('PayPal: email entered');
+
+        await humanDelay();
+
+        // Click "Next" button (PayPal's two-step login)
+        const nextBtn = paypalPage.locator('#btnNext, button:has-text("Next"), button[type="submit"]').first();
+        try {
+            await nextBtn.waitFor({ state: 'visible', timeout: 5000 });
+            await nextBtn.click();
+            log.info('PayPal: clicked Next');
+            await humanDelay();
+        } catch {
+            log.info('PayPal: no Next button — single-page login');
+        }
+
+        // Step 2: Enter PayPal password
+        const pwInput = paypalPage.locator('#password, input[name="login_password"], input[type="password"]').first();
+        await pwInput.waitFor({ state: 'visible', timeout: 10000 });
+        await pwInput.click();
+        await humanDelay();
+        await pwInput.fill(password);
+        log.info('PayPal: password entered');
+
+        await humanDelay();
+
+        // Click "Log In" button
+        const loginBtn = paypalPage.locator('#btnLogin, button:has-text("Log In"), button[type="submit"]').first();
+        await loginBtn.waitFor({ state: 'visible', timeout: 5000 });
+        await loginBtn.click();
+        log.info('PayPal: clicked Log In');
+
+        // Wait for PayPal to load the confirmation/review page
+        await paypalPage.waitForLoadState('domcontentloaded', { timeout: 20000 });
+        await humanDelay();
+
+        // Step 3: Click "Pay Now" / "Continue" / "Agree & Continue"
+        const confirmSelectors = [
+            '#payment-submit-btn',
+            'button:has-text("Pay Now")',
+            'button:has-text("Continue")',
+            'button:has-text("Agree & Continue")',
+            'button:has-text("Agree and Continue")',
+            '#confirmButtonTop',
+            'input[name="submit.x"]',
+        ];
+
+        for (const sel of confirmSelectors) {
+            try {
+                const btn = paypalPage.locator(sel).first();
+                await btn.waitFor({ state: 'visible', timeout: 5000 });
+                await btn.click();
+                log.info('PayPal: confirmed payment', { selector: sel });
+                break;
+            } catch {
+                // try next
+            }
+        }
+
+        // Wait for popup to close or redirect back to Pokemon Center
+        await humanDelay();
+        log.info('PayPal: login and payment confirmation complete');
+
+    } catch (err) {
+        log.error('PayPal login flow error', { error: err.message });
+        try {
+            const { sendCriticalAlert } = await import('./alerts.js');
+            await sendCriticalAlert(`⚠️ PayPal login failed: ${err.message}`);
+        } catch { /* swallow */ }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Main checkout flow
 // ---------------------------------------------------------------------------
@@ -259,9 +354,74 @@ export async function attemptCheckout(product) {
 
         await takeScreenshot(page, 'checkout-page');
 
-        // ---- 8. Apply store credits / gift cards ----
+        // ---- 8. Payment — PayPal or store credits ----
+        const hasPayPal = config.paypal.email && config.paypal.password;
+
+        if (hasPayPal) {
+            log.info('💳 Selecting PayPal as payment method');
+            try {
+                // Click the PayPal payment option
+                const paypalSelectors = [
+                    'button:has-text("PayPal")',
+                    '[data-testid="paypal-button"]',
+                    '.paypal-button',
+                    'input[value="paypal"]',
+                    'label:has-text("PayPal")',
+                    'input[name="paymentMethod"][value="paypal"]',
+                    '[data-method="paypal"]',
+                    'img[alt*="PayPal"]',
+                ];
+
+                const clickedPayPal = await clickFirst(page, paypalSelectors, { timeout: 10000 });
+                if (!clickedPayPal) {
+                    log.warn('PayPal button not found — will try store credits fallback');
+                } else {
+                    await humanDelay();
+
+                    // PayPal typically opens a popup or redirects.
+                    // Handle both patterns:
+
+                    // Pattern 1: PayPal popup window
+                    const popupPromise = context.waitForEvent('page', { timeout: 15000 }).catch(() => null);
+                    await humanDelay();
+                    const paypalPage = await popupPromise;
+
+                    if (paypalPage) {
+                        // We got a PayPal popup
+                        log.info('PayPal popup detected — logging in');
+                        await handlePayPalLogin(paypalPage);
+                    } else {
+                        // Pattern 2: PayPal redirect (same page)
+                        const currentUrl = page.url();
+                        if (currentUrl.includes('paypal.com')) {
+                            log.info('PayPal redirect detected — logging in');
+                            await handlePayPalLogin(page);
+                        } else {
+                            // Pattern 3: PayPal iframe or inline widget
+                            log.info('Checking for PayPal iframe');
+                            const paypalFrame = page.frameLocator('iframe[name*="paypal"], iframe[src*="paypal"]').first();
+                            try {
+                                await paypalFrame.locator('body').waitFor({ timeout: 5000 });
+                                log.info('PayPal iframe found — may need manual interaction');
+                            } catch {
+                                log.info('No PayPal iframe — payment may already be set');
+                            }
+                        }
+                    }
+
+                    await humanDelay();
+                    await takeScreenshot(page, 'paypal-complete');
+                    log.info('PayPal payment flow completed');
+                }
+            } catch (paypalErr) {
+                log.warn('PayPal payment error', { error: paypalErr.message });
+                await takeScreenshot(page, 'paypal-error');
+            }
+        }
+
+        // Apply store credits if enabled (can stack with PayPal for partial)
         if (config.useStoreCredits) {
-            log.info('Attempting to apply store credits');
+            log.info('Checking for store credits to apply');
             try {
                 const creditSelectors = [
                     'button:has-text("Apply Store Credit")',
@@ -274,11 +434,11 @@ export async function attemptCheckout(product) {
 
                 const appliedCredit = await clickFirst(page, creditSelectors, { timeout: 5000 });
                 if (appliedCredit) {
-                    log.info('Store credit / gift card section activated');
+                    log.info('Store credit / gift card applied');
                     await humanDelay();
                     await takeScreenshot(page, 'store-credit-applied');
                 } else {
-                    log.info('No store credit / gift card section found — continuing');
+                    log.info('No store credit section found — continuing');
                 }
             } catch (creditErr) {
                 log.warn('Error applying store credits', { error: creditErr.message });

@@ -11,6 +11,12 @@ export const config = {
         password: process.env.POKEMON_CENTER_PASSWORD || '',
     },
 
+    // PayPal checkout (no card numbers — just PayPal login)
+    paypal: {
+        email: process.env.PAYPAL_EMAIL || '',
+        password: process.env.PAYPAL_PASSWORD || '',
+    },
+
     // Monitoring
     pollIntervalMs: (Number(process.env.POLL_INTERVAL_SECONDS) || 60) * 1000,
     pollJitterMs: (Number(process.env.POLL_JITTER_SECONDS) || 15) * 1000,
